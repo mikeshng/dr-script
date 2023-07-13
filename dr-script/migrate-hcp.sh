@@ -2,6 +2,14 @@
 
 set -eux
 
+function get_hc_kubeconfig {
+  source ../common/common.sh
+  export KUBECONFIG=${MGMT_KUBECONFIG}
+  export HCPASS=$(oc get secret -n ${HC_CLUSTER_NS} ${HC_CLUSTER_NAME}-kubeadmin-password -o go-template='{{.data.password}}' | base64 -d)
+  export KUBECONFIG=${HC_KUBECONFIG}
+  oc login $(rosa describe cluster -c ${HC_CLUSTER_ID} -o json | jq -r .api.url) -u kubeadmin -p ${HCPASS}
+}
+
 function change_reconciliation {
 
     if [[ -z "${1}" ]];then
@@ -334,6 +342,7 @@ function backup_hc {
     #oc annotate -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} machines --all "machine.cluster.x-k8s.io/exclude-node-draining="
     NODEPOOLS=$(oc get nodepools -n ${HC_CLUSTER_NS} -o=jsonpath='{.items[?(@.spec.clusterName=="'${HC_CLUSTER_NAME}'")].metadata.name}')
 
+    get_hc_kubeconfig
     change_reconciliation "stop"
     backup_etcd
     render_svc_objects
