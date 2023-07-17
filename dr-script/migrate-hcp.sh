@@ -19,6 +19,7 @@ function change_reconciliation {
 
     case ${1} in
         "stop")
+            export KUBECONFIG=${MGMT_KUBECONFIG}
             # Pause reconciliation of HC and NP and ETCD writers
             PAUSED_UNTIL="true"
             oc patch -n ${HC_CLUSTER_NS} hostedclusters/${HC_CLUSTER_NAME} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
