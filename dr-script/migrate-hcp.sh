@@ -445,6 +445,11 @@ function teardown_old_hc {
     oc scale deployment -n hypershift operator --replicas 2
 
     oc delete ns ${HC_CLUSTER_NS} || true
+}
+
+function teardown_old_klusterlet {
+
+    export KUBECONFIG=${MGMT_KUBECONFIG}
 
     # Klusterlet + NS
     oc delete klusterlet klusterlet-${HC_CLUSTER_ID} --wait=false
@@ -457,12 +462,24 @@ function teardown_old_hc {
         oc patch -n klusterlet-${HC_CLUSTER_ID} ${p} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]' || true
     done
     oc delete ns klusterlet-${HC_CLUSTER_ID} --ignore-not-found=true
-
 }
 
 function restore_ovn_pods() {
     echo "Deleting OVN Pods in Guest Cluster to reconnect with new OVN Master"
     while ! oc --kubeconfig=${HC_KUBECONFIG} delete pod -n openshift-ovn-kubernetes --all; do sleep 3; done
+}
+
+function restart_kube_apiserver() {
+    echo "Restart audit-webook, kube-apiserver, and openshift-route-controller-manager to fix intermittent api issues"
+    export KUBECONFIG=${MGMT2_KUBECONFIG}
+    oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 deployment/audit-webhook
+    oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=2 deployment/audit-webhook
+    while ! [ "$(oc get po | grep audit-webhook | grep Running | wc -l)" == "2" ]; do sleep 10; done
+    oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 deployment/kube-apiserver
+    oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=3 deployment/kube-apiserver
+    while ! [ "$(oc get po | grep kube-apiserver | grep Running | wc -l)" == "3" ]; do sleep 10; done
+    oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 deployment/openshift-route-controller-manager
+    oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=3 deployment/openshift-route-controller-manager
 }
 
 function teardown_old_svc {
@@ -496,6 +513,8 @@ echo "Tearing down the HC in Source Management Cluster"
 teardown_old_svc
 teardown_old_hc
 restore_ovn_pods
+restart_kube_apiserver
+teardown_old_klusterlet
 echo "Teardown Done"
 ELAPSED="Elapsed: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
 echo $ELAPSED
