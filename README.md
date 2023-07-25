@@ -8,9 +8,9 @@ hypershift, oc, rosa, and yq binaries in your path.
 - Run the migration `pushd dr-script && ./migrate-hcp.sh && popd`
 
 ## TODO:
-- There is a secret with the kubeconfig in it that we should be able to use, but I'm getting cert errors trying to use it to talk to the hosted cluster... could be something in the environment where I just need to import a cert or do something trivial, but using the admin password as above works for now.
 - There may be other requirements not listed.
 - If logged in to ocm we probably have enough to retrieve the kubeconfigs so they don't have to be manually placed on disk.
+- Cleanup of the migrated cluster currently does not complete properly. This may be due to OCM no longer knowing where the hosted cluster resides and failing to perform some tasks. For now `cleanup-migrated-cluster.sh` is here to facilitate faster cleanup, but ideally the migration will handle the missing pieces so it becomes necessary. This script should not be run against cluster you don't want destroyed or that hasn't been migrated.
 
 ## Downloads
 - hypershift https://hypershift-docs.netlify.app/getting-started/ (not aware of published binaries)
