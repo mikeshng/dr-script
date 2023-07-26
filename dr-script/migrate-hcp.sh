@@ -466,7 +466,7 @@ function teardown_old_klusterlet {
 
 function restore_ovn_pods() {
     echo "Deleting OVN Pods in Guest Cluster to reconnect with new OVN Master"
-    while ! oc --kubeconfig=${HC_KUBECONFIG} delete pod -n openshift-ovn-kubernetes --all; do sleep 3; done
+    while ! oc --kubeconfig=${HC_KUBECONFIG} delete pod -n openshift-ovn-kubernetes --all --wait=false --grace-period=0; do sleep 3; done
 }
 
 function restart_kube_apiserver() {
