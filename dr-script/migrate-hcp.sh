@@ -474,12 +474,20 @@ function restart_kube_apiserver() {
     export KUBECONFIG=${MGMT2_KUBECONFIG}
     oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 deployment/audit-webhook
     oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=2 deployment/audit-webhook
-    while ! [ "$(oc get po | grep audit-webhook | grep Running | wc -l)" == "2" ]; do sleep 10; done
+    while ! [ "$(oc get po -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} | grep audit-webhook | grep Running | wc -l)" == "2" ]; do sleep 10; done
     oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 deployment/kube-apiserver
     oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=3 deployment/kube-apiserver
-    while ! [ "$(oc get po | grep kube-apiserver | grep Running | wc -l)" == "3" ]; do sleep 10; done
+    while ! [ "$(oc get po -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} | grep kube-apiserver | grep Running | wc -l)" == "3" ]; do sleep 10; done
     oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 deployment/openshift-route-controller-manager
     oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=3 deployment/openshift-route-controller-manager
+}
+
+function readd_appliedmanifestwork_ownerref() {
+    export KUBECONFIG=${MGMT2_KUBECONFIG}
+    export AMW=$(oc get appliedmanifestwork --no-headers -o custom-columns=name:.metadata.name | grep ${HC_CLUSTER_ID}$)
+    export AMW_UID=$(oc get appliedmanifestwork $AMW -o go-template='{{ .metadata.uid }}')
+    export AMW_NAME=$(oc get appliedmanifestwork $AMW -o go-template='{{ .metadata.name }}')
+    oc -n ${HC_CLUSTER_NS} patch hostedcluster ${HC_CLUSTER_NAME} --patch "{\"metadata\":{\"ownerReferences\":[{\"apiVersion\":\"work.open-cluster-management.io/v1\",\"kind\":\"AppliedManifestWork\",\"name\":\"$AMW_NAME\",\"uid\":\"$AMW_UID\"}]}}" --type=merge
 }
 
 function teardown_old_svc {
@@ -514,6 +522,7 @@ teardown_old_svc
 teardown_old_hc
 restore_ovn_pods
 restart_kube_apiserver
+readd_appliedmanifestwork_ownerref
 teardown_old_klusterlet
 echo "Teardown Done"
 ELAPSED="Elapsed: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
