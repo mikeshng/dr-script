@@ -2,15 +2,14 @@
 
 set -eux
 
-function get_hc_kubeconfig {
-  source ../common/common.sh
+function get_hc_kubeconfig() {
   export KUBECONFIG=${MGMT_KUBECONFIG}
   export HCPASS=$(oc get secret -n ${HC_CLUSTER_NS} ${HC_CLUSTER_NAME}-kubeadmin-password -o go-template='{{.data.password}}' | base64 -d)
   export KUBECONFIG=${HC_KUBECONFIG}
   oc login $(rosa describe cluster -c ${HC_CLUSTER_ID} -o json | jq -r .api.url) -u kubeadmin -p ${HCPASS}
 }
 
-function change_reconciliation {
+function change_reconciliation() {
 
     if [[ -z "${1}" ]];then
         echo "Give me the status <start|stop>"
@@ -41,51 +40,39 @@ function change_reconciliation {
 
 }
 
-function backup_etcd {
+function backup_etcd() {
     # ETCD Backup
-    ETCD_PODS="etcd-0"
-    if [ "${CONTROL_PLANE_AVAILABILITY_POLICY}" = "HighlyAvailable" ]; then
-      ETCD_PODS="etcd-0 etcd-1 etcd-2"
-    fi
-
-    ## If you are in 4.12 or above, use this one
+    POD="etcd-0"
     ETCD_CA_LOCATION=/etc/etcd/tls/etcd-ca/ca.crt
 
-    ## If you are in 4.11 or below, use this other one
-    #ETCD_CA_LOCATION=/etc/etcd/tls/client/etcd-client-ca.crt
+    # Create an etcd snapshot
+    oc exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl --cacert ${ETCD_CA_LOCATION} --cert /etc/etcd/tls/client/etcd-client.crt --key /etc/etcd/tls/client/etcd-client.key --endpoints=localhost:2379 snapshot save /var/lib/data/snapshot.db
 
-    for POD in ${ETCD_PODS}; do
-      # Create an etcd snapshot
-      oc exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl --cacert ${ETCD_CA_LOCATION} --cert /etc/etcd/tls/client/etcd-client.crt --key /etc/etcd/tls/client/etcd-client.key --endpoints=localhost:2379 snapshot save /var/lib/data/snapshot.db
+    oc exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl -w table snapshot status /var/lib/data/snapshot.db
 
-      oc exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl -w table snapshot status /var/lib/data/snapshot.db
+    FILEPATH="/${BUCKET_NAME}/${HC_CLUSTER_NAME}-${POD}-snapshot.db"
+    CONTENT_TYPE="application/x-compressed-tar"
+    DATE_VALUE=`date -R`
+    SIGNATURE_STRING="PUT\n\n${CONTENT_TYPE}\n${DATE_VALUE}\n${FILEPATH}"
 
-      FILEPATH="/${BUCKET_NAME}/${HC_CLUSTER_NAME}-${POD}-snapshot.db"
-      CONTENT_TYPE="application/x-compressed-tar"
-      DATE_VALUE=`date -R`
-      SIGNATURE_STRING="PUT\n\n${CONTENT_TYPE}\n${DATE_VALUE}\n${FILEPATH}"
+    #set +x
+    ACCESS_KEY=$(grep aws_access_key_id ${AWS_CREDS} | head -n1 | cut -d= -f2 | sed "s/ //g")
+    SECRET_KEY=$(grep aws_secret_access_key ${AWS_CREDS} | head -n1 | cut -d= -f2 | sed "s/ //g")
+    SIGNATURE_HASH=$(echo -en ${SIGNATURE_STRING} | openssl sha1 -hmac "${SECRET_KEY}" -binary | base64)
 
-      #set +x
-      ACCESS_KEY=$(grep aws_access_key_id ${AWS_CREDS} | head -n1 | cut -d= -f2 | sed "s/ //g")
-      SECRET_KEY=$(grep aws_secret_access_key ${AWS_CREDS} | head -n1 | cut -d= -f2 | sed "s/ //g")
-      SIGNATURE_HASH=$(echo -en ${SIGNATURE_STRING} | openssl sha1 -hmac "${SECRET_KEY}" -binary | base64)
-
-      # FIXME: this is pushing to the OIDC bucket
-      oc exec -it etcd-0 -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- curl -X PUT -T "/var/lib/data/snapshot.db" \
-        -H "Host: ${BUCKET_NAME}.s3.amazonaws.com" \
-        -H "Date: ${DATE_VALUE}" \
-        -H "Content-Type: ${CONTENT_TYPE}" \
-        -H "Authorization: AWS ${ACCESS_KEY}:${SIGNATURE_HASH}" \
-        https://${BUCKET_NAME}.s3.amazonaws.com/${HC_CLUSTER_NAME}-${POD}-snapshot.db
-    done
-
+    oc exec -it etcd-0 -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- curl -X PUT -T "/var/lib/data/snapshot.db" \
+      -H "Host: ${BUCKET_NAME}.s3.amazonaws.com" \
+      -H "Date: ${DATE_VALUE}" \
+      -H "Content-Type: ${CONTENT_TYPE}" \
+      -H "Authorization: AWS ${ACCESS_KEY}:${SIGNATURE_HASH}" \
+      https://${BUCKET_NAME}.s3.amazonaws.com/${HC_CLUSTER_NAME}-${POD}-snapshot.db
 }
 
 function render_hc_objects {
     # Backup resources
+    rm -f -r ${BACKUP_DIR}
     mkdir -p ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS} ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}
     chmod 700 ${BACKUP_DIR}/namespaces/
-    export KUBECONFIG="${MGMT_KUBECONFIG}"
 
     # HostedCluster
     echo "Backing Up HostedCluster Objects:"
@@ -100,14 +87,14 @@ function render_hc_objects {
 
     # Secrets in the HC Namespace
     echo "--> HostedCluster Secrets"
-    for s in $(oc get secret -n ${HC_CLUSTER_NS} | grep -e "^${HC_CLUSTER_NAME}" -e "^bound" -e "^cluster" | awk '{print $1}'); do
-        oc get secret -n ${HC_CLUSTER_NS} $s -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/secret-${s}.yaml
+    for s in $(oc get secret -n ${HC_CLUSTER_NS} --as backplane-cluster-admin | grep "^${HC_CLUSTER_NAME}" | awk '{print $1}'); do
+        oc get secret -n ${HC_CLUSTER_NS} $s -o yaml --as backplane-cluster-admin > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/secret-${s}.yaml
     done
 
     # Secrets in the HC Control Plane Namespace
     echo "--> HostedCluster ControlPlane Secrets"
-    for s in $(oc get secret -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} | egrep -v "docker|service-account-token|oauth-openshift|NAME|token-${HC_CLUSTER_NAME}" | awk '{print $1}'); do
-        oc get secret -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} $s -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/secret-${s}.yaml
+    for s in $(oc get secret -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --as backplane-cluster-admin | egrep -v "docker|service-account-token|oauth-openshift|NAME|token-${HC_CLUSTER_NAME}" | awk '{print $1}'); do
+        oc get secret --as backplane-cluster-admin -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} $s -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/secret-${s}.yaml
     done
 
     # Hosted Control Plane
@@ -116,7 +103,7 @@ function render_hc_objects {
 
     # Cluster
     echo "--> Cluster"
-    CL_NAME=$(oc get hcp ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o jsonpath={.metadata.labels.\*} | grep ${HC_CLUSTER_ID})
+    CL_NAME=$(oc get hcp ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o jsonpath={.metadata.labels.\*})
     oc get cluster ${CL_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/cl-${HC_CLUSTER_NAME}.yaml
 
     # AWS Cluster
@@ -125,12 +112,13 @@ function render_hc_objects {
 
     # AWS MachineTemplate
     echo "--> AWS Machine Template"
-    oc get awsmachinetemplate ${NODEPOOLS} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/awsmt-${HC_CLUSTER_NAME}.yaml
+    MT_NAME=$(oc get awsmachinetemplate -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o json | jq -r '.items[0].metadata.name')
+    oc get awsmachinetemplate ${MT_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/awsmt-${HC_CLUSTER_NAME}.yaml
 
     # AWS Machines
     echo "--> AWS Machine"
-    CL_NAME=$(oc get hcp ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o jsonpath={.metadata.labels.\*} | grep ${HC_CLUSTER_ID})
-    for s in $(oc get awsmachines -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --no-headers | grep ${CL_NAME} | cut -f1 -d\ ); do
+    CL_NAME=$(oc get hcp ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o jsonpath={.metadata.labels.\*})
+    for s in $(oc get awsmachines -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --no-headers | grep ${CL_NAME} | cut -f 1 -d\ ); do
         oc get -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} awsmachines $s -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/awsm-${s}.yaml
     done
 
@@ -156,7 +144,7 @@ function render_hc_objects {
     done
 }
 
-function restore_etcd {
+function restore_etcd() {
 
     ETCD_PODS="etcd-0"
     if [ "${CONTROL_PLANE_AVAILABILITY_POLICY}" = "HighlyAvailable" ]; then
@@ -199,7 +187,7 @@ EOF
 
 }
 
-function restore_object {
+function restore_object() {
     if [[ -z ${1} || ${1} == " " ]]; then
         echo "I need an argument to deploy K8s objects"
         exit 1
@@ -249,36 +237,11 @@ function clean_routes() {
         exit 1
     fi
 
-    # Constants
-    if [[ -z "${2}" ]];then
-        echo "Give me the Route53 zone ID"
-        exit 1
-    fi
-
-    ZONE_ID=${2}
-    ROUTES=10
-    timeout=40
-    count=0
-
-    # This allows us to remove the ownership in the AWS for the API route
     oc delete route -n ${1} --all
-
-#    while [ ${ROUTES} -gt 0 ]
-#    do
-#        echo "Waiting for ExternalDNS Operator to clean the DNS Records in AWS Route53 where the zone id is: ${ZONE_ID}..."
-#        echo "Try: (${count}/${timeout})"
-#        sleep 10
-#        if [[ $count -eq timeout ]];then
-#            echo "Timeout waiting for cleaning the Route53 DNS records"
-#            exit 1
-#        fi
-#        count=$((count+1))
-#        ROUTES=$(aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --max-items 10000 --output json | grep -c ${HC_CLUSTER_NAME}-external-dns.${EXTERNAL_DNS_DOMAIN}) || true
-#    done
 }
 
-function render_svc_objects {
-    rm -fr ${BACKUP_DIR}
+function render_svc_objects() {
+    rm -r -f ${BACKUP_DIR}
     BACKUP_DIR=${HC_CLUSTER_DIR}/backup
     mkdir -p ${BACKUP_DIR}/svc
     # Change kubeconfig to service cluster
@@ -300,13 +263,13 @@ function render_svc_objects {
     oc get managedclusteraddons -n ${HC_CLUSTER_ID} governance-policy-framework -o yaml > ${BACKUP_DIR}/svc/managedclusteraddon-governance-policy-framework-${HC_CLUSTER_ID}.yaml
     echo "--> governance-policy-framework ManagedClusterAddOn"
     sed -i -e '/^status:$/,$d' ${BACKUP_DIR}/svc/managedclusteraddon-governance-policy-framework-${HC_CLUSTER_ID}.yaml
-    sed -i -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/managedclusteraddon-governance-policy-framework-${HC_CLUSTER_ID}.yaml 
+    sed -i -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/managedclusteraddon-governance-policy-framework-${HC_CLUSTER_ID}.yaml
 
     oc get managedclusteraddons -n ${HC_CLUSTER_ID} work-manager -o yaml > ${BACKUP_DIR}/svc/managedclusteraddon-work-manager-${HC_CLUSTER_ID}.yaml
     echo "--> work-manager ManagedClusterAddOn"
     sed -i -e '/^status:$/,$d' ${BACKUP_DIR}/svc/managedclusteraddon-work-manager-${HC_CLUSTER_ID}.yaml
     sed -i -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/managedclusteraddon-work-manager-${HC_CLUSTER_ID}.yaml
- 
+
     # ManifestWork
     oc get manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID} -o yaml > ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}.yaml
     echo "--> ${HC_CLUSTER_ID} ManifestWork"
@@ -325,14 +288,14 @@ function render_svc_objects {
     sed -i -e '/^status:$/,$d' ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-workers.yaml
     sed -i -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-workers.yaml
     oc patch manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-workers --type=merge --patch '{"spec":{"deleteOption":{"propagationPolicy":"Orphan"}}}'
-    
+
     # This will be recreated upon updating the managedcluster so we don't back it up
     oc patch manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-hosted-klusterlet --type=merge --patch '{"spec":{"deleteOption":{"propagationPolicy":"Orphan"}}}'
 
     oc delete manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID} ${HC_CLUSTER_ID}-00-namespaces ${HC_CLUSTER_ID}-workers
 }
 
-function backup_hc {
+function backup_hc() {
     BACKUP_DIR=${HC_CLUSTER_DIR}/backup
     # Create a ConfigMap on the guest so we can tell which management cluster it came from
     export KUBECONFIG=${HC_KUBECONFIG}
@@ -351,7 +314,7 @@ function backup_hc {
     clean_routes "${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}" "${AWS_ZONE_ID}"
 }
 
-function restore_hc {
+function restore_hc() {
     # MGMT2 Context
 
     if [[ ! -f ${MGMT2_KUBECONFIG} ]]; then
@@ -380,14 +343,14 @@ function restore_hc {
 
 }
 
-function restore_svc {
+function restore_svc() {
     export KUBECONFIG=${SVC2_KUBECONFIG}
     for f in $(ls -1 ${BACKUP_DIR}/svc/*); do
       yq 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status)' $f | oc apply -f -
     done
-} 
+}
 
-function teardown_old_hc {
+function teardown_old_hc() {
 
     export KUBECONFIG=${MGMT_KUBECONFIG}
 
@@ -447,7 +410,7 @@ function teardown_old_hc {
     oc delete ns ${HC_CLUSTER_NS} || true
 }
 
-function teardown_old_klusterlet {
+function teardown_old_klusterlet() {
 
     export KUBECONFIG=${MGMT_KUBECONFIG}
 
@@ -490,13 +453,13 @@ function readd_appliedmanifestwork_ownerref() {
     oc -n ${HC_CLUSTER_NS} patch hostedcluster ${HC_CLUSTER_NAME} --patch "{\"metadata\":{\"ownerReferences\":[{\"apiVersion\":\"work.open-cluster-management.io/v1\",\"kind\":\"AppliedManifestWork\",\"name\":\"$AMW_NAME\",\"uid\":\"$AMW_UID\"}]}}" --type=merge
 }
 
-function teardown_old_svc {
+function teardown_old_svc() {
     export KUBECONFIG=${SVC_KUBECONFIG}
     oc delete manifestwork -n ${MGMT_CLUSTER_NAME} addon-config-policy-controller-deploy-hosting-${HC_CLUSTER_ID}-0 addon-governance-policy-framework-deploy-hosting-${HC_CLUSTER_ID}-0 addon-work-manager-deploy-hosting-${HC_CLUSTER_ID}-0 ${HC_CLUSTER_ID}-hosted-klusterlet
 }
 
 REPODIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/.."
-source $REPODIR/common/common.sh
+source $REPODIR/dr-script/common.sh
 
 ## Backup
 echo "Creating ETCD Backup"
