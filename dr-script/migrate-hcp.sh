@@ -4,7 +4,7 @@ set -eux
 
 function get_hc_kubeconfig() {
   export KUBECONFIG=${HC_KUBECONFIG}
-  oc login $(rosa describe cluster -c ${HC_CLUSTER_ID} -o json | jq -r .api.url) -u cluster-admin -p ${HCPASS}
+  oc login $(rosa describe cluster -c ${HC_CLUSTER_ID} -o json | jq -r .api.url) -u cluster-admin -p ${HC_PASS}
 }
 
 function change_reconciliation() {
@@ -68,7 +68,6 @@ function backup_etcd() {
 
 function render_hc_objects {
     # Backup resources
-    rm -f -r ${BACKUP_DIR}
     mkdir -p ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS} ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}
     chmod 700 ${BACKUP_DIR}/namespaces/
 
@@ -260,7 +259,6 @@ function clean_routes() {
 }
 
 function render_svc_objects() {
-    rm -r -f ${BACKUP_DIR}
     BACKUP_DIR=${HC_CLUSTER_DIR}/backup
     mkdir -p ${BACKUP_DIR}/svc
     # Change kubeconfig to service cluster
@@ -316,6 +314,12 @@ function render_svc_objects() {
 
 function backup_hc() {
     BACKUP_DIR=${HC_CLUSTER_DIR}/backup
+                
+    if [ -d ${BACKUP_DIR} ]; then
+        echo "There is an existing backup in ${BACKUP_DIR}. Remove it before starting a new backup."
+        exit 1          
+    fi
+
     # Create a ConfigMap on the guest so we can tell which management cluster it came from
     export KUBECONFIG=${HC_KUBECONFIG}
     oc create configmap ${USER}-dev-cluster -n default --from-literal=from=${MGMT_CLUSTER_NAME} || true
@@ -478,14 +482,51 @@ function teardown_old_svc() {
     oc delete manifestwork -n ${MGMT_CLUSTER_NAME} addon-config-policy-controller-deploy-hosting-${HC_CLUSTER_ID}-0 addon-governance-policy-framework-deploy-hosting-${HC_CLUSTER_ID}-0 addon-work-manager-deploy-hosting-${HC_CLUSTER_ID}-0 ${HC_CLUSTER_ID}-hosted-klusterlet
 }
 
+helpFunc()
+{
+   echo ""
+   echo "Usage: $0 -i HC_CLUSTER_ID -n HC_CLUSTER_NAME -s HC_CLUSTER_NS -p HC_PASS"
+   exit 1 
+}
+
 REPODIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/.."
 
-HCPASS=${1}
-if [ -z $HCPASS ]; then
+source $REPODIR/dr-script/common.sh
+
+while getopts "i:n:s:p:" opt
+do
+   case "$opt" in
+      i ) HC_CLUSTER_ID="${OPTARG}" ;;
+      n ) HC_CLUSTER_NAME="${OPTARG}" ;;
+      s ) HC_CLUSTER_NS="${OPTARG}" ;;
+      p ) HC_PASS="${OPTARG}" ;;
+      ? ) helpFunc ;; 
+   esac
+done
+
+if [ -z $HC_CLUSTER_ID ]; then
+    echo "No value for HC_CLUSTER_ID parameter specified"
     exit 1
 fi
 
-source $REPODIR/dr-script/common.sh
+if [ -z $HC_CLUSTER_NAME ]; then
+    echo "No value for HC_CLUSTER_NAME parameter specified"
+    exit 1
+fi
+
+if [ -z $HC_CLUSTER_NS ]; then
+    echo "No value for HC_CLUSTER_NS parameter specified"
+    exit 1
+fi
+
+if [ -z $HC_PASS ]; then
+    echo "No value for HC_PASS parameter specified"
+    exit 1
+fi
+
+HC_CLUSTER_DIR="${BASE_PATH}/${HC_CLUSTER_NAME}"
+HC_KUBECONFIG="${HC_CLUSTER_DIR}/kubeconfig"
+BACKUP_DIR=${HC_CLUSTER_DIR}/backup
 
 ## Backup
 echo "Creating ETCD Backup"
