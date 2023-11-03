@@ -36,4 +36,3 @@ HC_PASS=""
 
 # S3 ETCD Backups
 BUCKET_NAME=""
-S3REGION=""
