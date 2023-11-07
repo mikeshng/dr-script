@@ -28,14 +28,9 @@ MGMT2_CLUSTER_DIR="${BASE_PATH}/${MGMT2_CLUSTER_NAME}"
 MGMT2_KUBECONFIG="${MGMT2_CLUSTER_DIR}/kubeconfig"
 
 # Hosted Cluster Context
-HC_CLUSTER_ID="277bnmbnv78gf44uf9h6m52opg5qmc9r"
-HC_CLUSTER_NS="ocm-staging-277bnmbnv78gf44uf9h6m52opg5qmc9r"
+HC_CLUSTER_NS=""
+HC_ENV="ocm-staging"
 HC_REGION=us-west-2
-HC_CLUSTER_NAME="ming-stg-hcp2"
-HC_CLUSTER_DIR="${BASE_PATH}/${HC_CLUSTER_NAME}"
-HC_KUBECONFIG="${HC_CLUSTER_DIR}/kubeconfig"
-BACKUP_DIR=${HC_CLUSTER_DIR}/backup
 
 # S3 ETCD Backups
 BUCKET_NAME="cs-hcp-dr"
-S3REGION="us-west-2"

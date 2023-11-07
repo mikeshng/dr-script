@@ -551,7 +551,7 @@ if [ "$#" -ne 2 ]; then
   exit 1
 fi
 
-while getopts "e:i:n:p:" opt
+while getopts "e:p:" opt
 do
    case "$opt" in
       e ) HC_ENV="${OPTARG}" ;;
