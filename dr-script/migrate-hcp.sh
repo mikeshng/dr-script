@@ -21,6 +21,12 @@ function get_hc_kubeconfig() {
     set -e
 }
 
+function get_hc_kubeadmin_pass() {
+  export KUBECONFIG="${MGMT_KUBECONFIG}"
+
+  HC_PASS=$(oc get secret -n  ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} kubeadmin-password -ojsonpath='{.data.password}' | base64 -d)
+}
+
 function change_reconciliation() {
 
     if [[ -z "${1}" ]];then
@@ -174,7 +180,10 @@ function render_hc_objects {
 function restore_etcd() {
 
     ETCD_PODS="etcd-0"
-
+    if [ "${CONTROL_PLANE_AVAILABILITY_POLICY}" = "HighlyAvailable" ]; then
+      ETCD_PODS="etcd-0 etcd-1 etcd-2"
+    fi
+    
     HC_RESTORE_FILE=${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/hc-${HC_CLUSTER_NAME}-restore.yaml
     HC_BACKUP_FILE=${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/hc-${HC_CLUSTER_NAME}.yaml
     HC_NEW_FILE=${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/hc-${HC_CLUSTER_NAME}-new.yaml
@@ -185,7 +194,7 @@ EOF
 
     for POD in ${ETCD_PODS}; do
       # Create a pre-signed URL for the etcd snapshot
-      ETCD_SNAPSHOT="s3://${BUCKET_NAME}/${HC_CLUSTER_NAME}-${POD}-snapshot.db"
+      ETCD_SNAPSHOT="s3://${BUCKET_NAME}/${HC_CLUSTER_NAME}-etcd-0-snapshot.db"
       ETCD_SNAPSHOT_URL=$(AWS_DEFAULT_REGION=${MGMT2_REGION} aws s3 presign ${ETCD_SNAPSHOT})
 
       # FIXME no CLI support for restoreSnapshotURL yet
@@ -481,20 +490,32 @@ function restart_kube_apiserver() {
     export KUBECONFIG=${MGMT2_KUBECONFIG}
     oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 deployment/audit-webhook
     oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=2 deployment/audit-webhook
-    for i in {1..6}; do
-        if [ "$(oc get po -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} | grep audit-webhook | grep Running | wc -l | tr -d '[:blank:]')" == "2" ]; then
+    for i in {1..36}; do
+        STATUS=$(oc get deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} audit-webhook -o jsonpath='{.status.conditions[?(@.type=="Available")].status}')
+        if [ "$STATUS" == "True" ]; then
             break
         fi
-        sleep 10
+
+        if [ $i -eq 36 ]; then
+            echo "Timed-out waiting for audit-webhook to be restarted"
+        else 
+            sleep 5
+        fi
     done
 
     oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 deployment/kube-apiserver
     oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=3 deployment/kube-apiserver
-    for i in {1..6}; do
-        if [ "$(oc get po -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} | grep kube-apiserver | grep Running | wc -l | tr -d '[:blank:]')" == "2" ]; then
+    for i in {1..36}; do
+        STATUS=$(oc get deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} kube-apiserver -o jsonpath='{.status.conditions[?(@.type=="Available")].status}')
+        if [ "$STATUS" == "True" ]; then
             break
         fi
-        sleep 10
+
+        if [ $i -eq 36 ]; then
+            echo "Timed-out waiting for kube-apiserver to be restarted"
+        else 
+            sleep 5
+        fi
     done
 
     oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 deployment/openshift-route-controller-manager
@@ -517,7 +538,7 @@ function teardown_old_svc() {
 helpFunc()
 {
    echo ""
-   echo "Usage: $0 -i HC_CLUSTER_ID -n HC_CLUSTER_NAME -s HC_CLUSTER_NS -p HC_PASS"
+   echo "Usage: $0 HC_CLUSTER_ID HC_CLUSTER_NAME -e HC_ENV -p HC_PASS"
    exit 1 
 }
 
@@ -525,35 +546,49 @@ REPODIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/.."
 
 source $REPODIR/dr-script/common.sh
 
-while getopts "i:n:s:p:" opt
+if [ "$#" -ne 2 ]; then
+  helpFunc
+  exit 1
+fi
+
+while getopts "e:i:n:p:" opt
 do
    case "$opt" in
-      i ) HC_CLUSTER_ID="${OPTARG}" ;;
-      n ) HC_CLUSTER_NAME="${OPTARG}" ;;
-      s ) HC_CLUSTER_NS="${OPTARG}" ;;
+      e ) HC_ENV="${OPTARG}" ;;
       p ) HC_PASS="${OPTARG}" ;;
       ? ) helpFunc ;; 
    esac
 done
 
+# The script continues here if the number of arguments is correct
+HC_CLUSTER_ID="$1"
 if [ -z $HC_CLUSTER_ID ]; then
     echo "No value for HC_CLUSTER_ID parameter specified"
     exit 1
 fi
 
+HC_CLUSTER_NAME="$2"
 if [ -z $HC_CLUSTER_NAME ]; then
     echo "No value for HC_CLUSTER_NAME parameter specified"
     exit 1
 fi
 
 if [ -z $HC_CLUSTER_NS ]; then
-    echo "No value for HC_CLUSTER_NS parameter specified"
-    exit 1
+    if [ -z $HC_ENV ]; then
+        echo "No value for HC_CLUSTER_NS or HC_ENV parameter specified"
+        exit 1
+    fi
+
+    HC_CLUSTER_NS="${HC_ENV}-${HC_CLUSTER_ID}"
 fi
 
 if [ -z $HC_PASS ]; then
-    echo "No value for HC_PASS parameter specified"
-    exit 1
+    get_hc_kubeadmin_pass
+
+    if [ -z $HC_PASS ]; then
+        echo "No value for HC_PASS parameter specified"
+        exit 1
+    fi
 fi
 
 HC_CLUSTER_DIR="${BASE_PATH}/${HC_CLUSTER_NAME}"
