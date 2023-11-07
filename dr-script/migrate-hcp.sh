@@ -231,24 +231,24 @@ function restore_object() {
         "secret" | "machine" | "machineset" | "hcp" | "cl" | "awscl" | "awsmt" | "awsm" | "machinedeployment")
             # Cleaning the YAML files before apply them
             for f in $(ls -1 ${BACKUP_DIR}/namespaces/${2}/${1}-*); do
-                yq 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status)' $f | oc apply -f -
+                yq eval 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status)' $f | oc apply -f -
             done
             ;;
         "certificate")
             for f in $(ls -1 ${BACKUP_DIR}/namespaces/${2}/${1}-*); do
-                yq 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status)' $f | oc apply -f -
+                yq eval 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status)' $f | oc apply -f -
             done
             ;;
         "hc")
             # Cleaning the YAML files before apply them
             for f in $(ls -1 ${BACKUP_DIR}/namespaces/${2}/${1}-*); do
-                yq 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status,.spec.pausedUntil)' $f | oc apply -f -
+                yq eval 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status,.spec.pausedUntil)' $f | oc apply -f -
             done
             ;;
         "np")
             # Cleaning the YAML files before apply them
             for f in $(ls -1 ${BACKUP_DIR}/namespaces/${2}/${1}-*); do
-                yq 'del(.metadata.annotations,.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status,.spec.pausedUntil)' $f | oc apply -f -
+                yq eval 'del(.metadata.annotations,.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status,.spec.pausedUntil)' $f | oc apply -f -
             done
             ;;
         *)
@@ -389,7 +389,7 @@ function restore_svc() {
         oc delete managedclusteraddon -n ${HC_CLUSTER_ID} ${ADDON_NAME}
       fi
 
-      yq 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status)' $f | oc apply -f -
+      yq eval 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status)' $f | oc apply -f -
     done
 }
 
