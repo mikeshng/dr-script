@@ -634,11 +634,6 @@ echo "Restoration Done!"
 ELAPSED="Elapsed: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
 echo $ELAPSED
 
-## OCM Migration commands
-echo "Executing OCM migration commands"
-ocm_migration
-echo "OCM migration commands Done!"
-
 ## Teardown
 SECONDS=0
 echo "Tearing down the HC in Source Management Cluster"
@@ -653,3 +648,8 @@ readd_appliedmanifestwork_ownerref
 echo "Teardown Done"
 ELAPSED="Elapsed: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
 echo $ELAPSED
+
+## OCM Migration commands
+echo "Executing OCM migration commands"
+ocm_migration
+echo "OCM migration commands Done!"
