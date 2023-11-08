@@ -40,14 +40,20 @@ function change_reconciliation() {
             # Pause reconciliation of HC and NP and ETCD writers
             PAUSED_UNTIL="true"
             oc patch -n ${HC_CLUSTER_NS} hostedclusters/${HC_CLUSTER_NAME} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
-            oc patch -n ${HC_CLUSTER_NS} nodepools/${NODEPOOLS} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
+            for nodepool in ${NODEPOOLS}
+            do
+                oc patch -n ${HC_CLUSTER_NS} nodepools/${nodepool} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
+            done
             oc scale deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 kube-apiserver openshift-apiserver openshift-oauth-apiserver control-plane-operator
             ;;
         "start")
             # Restart reconciliation of HC and NP and ETCD writers
             PAUSED_UNTIL="false"
             oc patch -n ${HC_CLUSTER_NS} hostedclusters/${HC_CLUSTER_NAME} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
-            oc patch -n ${HC_CLUSTER_NS} nodepools/${NODEPOOLS} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
+            for nodepool in ${NODEPOOLS}
+            do
+                oc patch -n ${HC_CLUSTER_NS} nodepools/${nodepool} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
+            done
             oc scale deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=1 kube-apiserver openshift-apiserver openshift-oauth-apiserver control-plane-operator
             ;;
         *)
@@ -65,8 +71,16 @@ function backup_etcd() {
 
     # Create an etcd snapshot
     oc exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl --cacert ${ETCD_CA_LOCATION} --cert /etc/etcd/tls/client/etcd-client.crt --key /etc/etcd/tls/client/etcd-client.key --endpoints=localhost:2379 snapshot save /var/lib/data/snapshot.db
+    if [ $? -ne 0 ]; then
+        echo "Failed to save etcd snapshot."
+        exit 1
+    fi
 
     oc exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl -w table snapshot status /var/lib/data/snapshot.db
+    if [ $? -ne 0 ]; then
+        echo "Failed to table snapshot status."
+        exit 1
+    fi
 
     FILEPATH="/${BUCKET_NAME}/${HC_CLUSTER_NAME}-${POD}-snapshot.db"
     CONTENT_TYPE="application/x-compressed-tar"
@@ -84,6 +98,10 @@ function backup_etcd() {
       -H "Content-Type: ${CONTENT_TYPE}" \
       -H "Authorization: AWS ${ACCESS_KEY}:${SIGNATURE_HASH}" \
       https://${BUCKET_NAME}.s3.amazonaws.com/${HC_CLUSTER_NAME}-${POD}-snapshot.db
+    if [ $? -ne 0 ]; then
+        echo "Failed to upload etcd snapshot."
+        exit 1
+    fi
 }
 
 function render_hc_objects {
@@ -106,9 +124,12 @@ function render_hc_objects {
     sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/hc-${HC_CLUSTER_NAME}.yaml
 
     # NodePool
-    oc get np ${NODEPOOLS} -n ${HC_CLUSTER_NS} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/np-${NODEPOOLS}.yaml
-    echo "--> NodePool"
-    sed -i'' -e '/^status:$/,$ d' ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/np-${NODEPOOLS}.yaml
+    for nodepool in ${NODEPOOLS}
+    do
+        oc get np ${nodepool} -n ${HC_CLUSTER_NS} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/np-${nodepool}.yaml
+        echo "--> NodePool ${nodepool}"
+        sed -i'' -e '/^status:$/,$ d' ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/np-${nodepool}.yaml
+    done
 
     # Secrets in the HC Namespace
     echo "--> HostedCluster Secrets"
@@ -435,8 +456,11 @@ function teardown_old_hc() {
     # Delete Nodepools
     NODEPOOLS=$(oc get nodepools -n ${HC_CLUSTER_NS} -o=jsonpath='{.items[?(@.spec.clusterName=="'${HC_CLUSTER_NAME}'")].metadata.name}')
     if [[ ! -z "${NODEPOOLS}" ]];then
-        oc patch -n "${HC_CLUSTER_NS}" nodepool ${NODEPOOLS} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]'
-        oc delete np -n ${HC_CLUSTER_NS} ${NODEPOOLS}
+        for nodepool in ${NODEPOOLS}
+        do
+            oc patch -n "${HC_CLUSTER_NS}" nodepool ${nodepool} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]'
+            oc delete np -n ${HC_CLUSTER_NS} ${nodepool}
+        done
     fi
 
     # Machines
