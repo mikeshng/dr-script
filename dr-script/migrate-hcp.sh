@@ -570,6 +570,20 @@ if [ "$#" -lt 2 ]; then
   exit 1
 fi
 
+HC_CLUSTER_ID="$1"
+if [ -z $HC_CLUSTER_ID ]; then
+    echo "No value for HC_CLUSTER_ID parameter specified"
+    exit 1
+fi
+shift
+
+HC_CLUSTER_NAME="$1"
+if [ -z $HC_CLUSTER_NAME ]; then
+    echo "No value for HC_CLUSTER_NAME parameter specified"
+    exit 1
+fi
+shift
+
 HC_PASS=""
 while getopts "e:p:" opt
 do
@@ -579,19 +593,6 @@ do
       ? ) helpFunc ;; 
    esac
 done
-
-# The script continues here if the number of arguments is correct
-HC_CLUSTER_ID="$1"
-if [ -z $HC_CLUSTER_ID ]; then
-    echo "No value for HC_CLUSTER_ID parameter specified"
-    exit 1
-fi
-
-HC_CLUSTER_NAME="$2"
-if [ -z $HC_CLUSTER_NAME ]; then
-    echo "No value for HC_CLUSTER_NAME parameter specified"
-    exit 1
-fi
 
 if [ -z $HC_CLUSTER_NS ]; then
     if [ -z $HC_ENV ]; then
