@@ -28,7 +28,7 @@ MGMT2_CLUSTER_DIR="${BASE_PATH}/${MGMT2_CLUSTER_NAME}"
 MGMT2_KUBECONFIG="${MGMT2_CLUSTER_DIR}/kubeconfig"
 
 # Hosted Cluster Context
-HC_CLUSTER_NS=""
+HC_CLUSTER_NS="ocm-staging-27cndaeif07ns4p6os6gvvbgbhkenu2e"
 HC_ENV="ocm-staging"
 HC_REGION=us-west-2
 

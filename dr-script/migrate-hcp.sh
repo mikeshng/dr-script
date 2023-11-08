@@ -97,18 +97,18 @@ function render_hc_objects {
     echo "Backing Up Certificate Objects:"
     oc get certificate cluster-api-cert -n ${HC_CLUSTER_NS} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/certificate-cluster-api-cert.yaml
     echo "--> Certificate"
-    # sed -i '' -e '/^status:$/,$d' ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/hc-${HC_CLUSTER_NAME}.yaml
+    # sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/hc-${HC_CLUSTER_NAME}.yaml
 
     # HostedCluster
     echo "Backing Up HostedCluster Objects:"
     oc get hc ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/hc-${HC_CLUSTER_NAME}.yaml
     echo "--> HostedCluster"
-    sed -i '' -e '/^status:$/,$d' ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/hc-${HC_CLUSTER_NAME}.yaml
+    sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/hc-${HC_CLUSTER_NAME}.yaml
 
     # NodePool
     oc get np ${NODEPOOLS} -n ${HC_CLUSTER_NS} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/np-${NODEPOOLS}.yaml
     echo "--> NodePool"
-    sed -i '' -e '/^status:$/,$ d' ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/np-${NODEPOOLS}.yaml
+    sed -i'' -e '/^status:$/,$ d' ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/np-${NODEPOOLS}.yaml
 
     # Secrets in the HC Namespace
     echo "--> HostedCluster Secrets"
@@ -206,8 +206,8 @@ EOF
     cat ${HC_RESTORE_FILE}
 
     if ! grep ${HC_CLUSTER_NAME}-snapshot.db ${HC_NEW_FILE}; then
-      sed -i '' -e "/type: PersistentVolume/r ${HC_RESTORE_FILE}" ${HC_NEW_FILE}
-      sed -i '' -e '/pausedUntil:/d' ${HC_NEW_FILE}
+      sed -i'' -e "/type: PersistentVolume/r ${HC_RESTORE_FILE}" ${HC_NEW_FILE}
+      sed -i'' -e '/pausedUntil:/d' ${HC_NEW_FILE}
     fi
 
     HC=$(oc get hc -n ${HC_CLUSTER_NS} ${HC_CLUSTER_NAME} -o name || true)
@@ -288,42 +288,42 @@ function render_svc_objects() {
     echo "Backing Up HostedCluster Objects:"
     oc get managedcluster ${HC_CLUSTER_ID} -o yaml > ${BACKUP_DIR}/svc/managedcluster-${HC_CLUSTER_ID}.yaml
     echo "--> ManagedCluster"
-    sed -i '' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/managedcluster-${HC_CLUSTER_ID}.yaml
-    sed -i '' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/managedcluster-${HC_CLUSTER_ID}.yaml
+    sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/managedcluster-${HC_CLUSTER_ID}.yaml
+    sed -i'' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/managedcluster-${HC_CLUSTER_ID}.yaml
 
     # ManagedClusterAddOns
     oc get managedclusteraddons -n ${HC_CLUSTER_ID} config-policy-controller -o yaml > ${BACKUP_DIR}/svc/managedclusteraddon-config-policy-controller-${HC_CLUSTER_ID}.yaml
     echo "--> config-policy-controller ManagedClusterAddOn"
-    sed -i '' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/managedclusteraddon-config-policy-controller-${HC_CLUSTER_ID}.yaml
-    sed -i '' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/managedclusteraddon-config-policy-controller-${HC_CLUSTER_ID}.yaml
+    sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/managedclusteraddon-config-policy-controller-${HC_CLUSTER_ID}.yaml
+    sed -i'' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/managedclusteraddon-config-policy-controller-${HC_CLUSTER_ID}.yaml
 
     oc get managedclusteraddons -n ${HC_CLUSTER_ID} governance-policy-framework -o yaml > ${BACKUP_DIR}/svc/managedclusteraddon-governance-policy-framework-${HC_CLUSTER_ID}.yaml
     echo "--> governance-policy-framework ManagedClusterAddOn"
-    sed -i '' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/managedclusteraddon-governance-policy-framework-${HC_CLUSTER_ID}.yaml
-    sed -i '' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/managedclusteraddon-governance-policy-framework-${HC_CLUSTER_ID}.yaml
+    sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/managedclusteraddon-governance-policy-framework-${HC_CLUSTER_ID}.yaml
+    sed -i'' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/managedclusteraddon-governance-policy-framework-${HC_CLUSTER_ID}.yaml
 
     oc get managedclusteraddons -n ${HC_CLUSTER_ID} work-manager -o yaml > ${BACKUP_DIR}/svc/managedclusteraddon-work-manager-${HC_CLUSTER_ID}.yaml
     echo "--> work-manager ManagedClusterAddOn"
-    sed -i '' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/managedclusteraddon-work-manager-${HC_CLUSTER_ID}.yaml
-    sed -i '' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/managedclusteraddon-work-manager-${HC_CLUSTER_ID}.yaml
+    sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/managedclusteraddon-work-manager-${HC_CLUSTER_ID}.yaml
+    sed -i'' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/managedclusteraddon-work-manager-${HC_CLUSTER_ID}.yaml
 
     # ManifestWork
     oc get manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID} -o yaml > ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}.yaml
     echo "--> ${HC_CLUSTER_ID} ManifestWork"
-    sed -i '' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}.yaml
-    sed -i '' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}.yaml
+    sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}.yaml
+    sed -i'' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}.yaml
     oc patch manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID} --type=merge --patch '{"spec":{"deleteOption":{"propagationPolicy":"Orphan"}}}'
 
     oc get manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-00-namespaces -o yaml > ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-00-namespaces.yaml
     echo "--> ${HC_CLUSTER_ID}-00-namespaces ManifestWork"
-    sed -i '' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-00-namespaces.yaml
-    sed -i '' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-00-namespaces.yaml
+    sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-00-namespaces.yaml
+    sed -i'' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-00-namespaces.yaml
     oc patch manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-00-namespaces --type=merge --patch '{"spec":{"deleteOption":{"propagationPolicy":"Orphan"}}}'
 
     oc get manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-workers -o yaml > ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-workers.yaml
     echo "--> ${HC_CLUSTER_ID}-workers ManifestWork"
-    sed -i '' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-workers.yaml
-    sed -i '' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-workers.yaml
+    sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-workers.yaml
+    sed -i'' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-workers.yaml
     oc patch manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-workers --type=merge --patch '{"spec":{"deleteOption":{"propagationPolicy":"Orphan"}}}'
 
     # This will be recreated upon updating the managedcluster so we don't back it up
@@ -400,6 +400,25 @@ function restore_svc() {
 
       yq eval 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status)' $f | oc apply -f -
     done
+}
+
+function ocm_migration() {
+    echo "The existing management cluster on OCM is:"
+    ocm get /api/clusters_mgmt/v1/clusters/${HC_CLUSTER_ID}/hypershift
+    if [ $? -ne 0 ]; then
+        echo "Failed to get details about the hosted cluster from OCM."
+        exit 1
+    fi
+
+    ocm patch /api/clusters_mgmt/v1/clusters/${HC_CLUSTER_ID}/hypershift <<-EOF
+{
+"management_cluster":"${MGMT2_CLUSTER_NAME}"
+}
+EOF
+    if [ $? -ne 0 ]; then
+        echo "Failed to patch OCM with new management cluster. Ensure you have the HCPMigration role."
+        exit 1
+    fi
 }
 
 function teardown_old_hc() {
@@ -546,11 +565,12 @@ REPODIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/.."
 
 source $REPODIR/dr-script/common.sh
 
-if [ "$#" -ne 2 ]; then
+if [ "$#" -lt 2 ]; then
   helpFunc
   exit 1
 fi
 
+HC_PASS=""
 while getopts "e:p:" opt
 do
    case "$opt" in
@@ -583,10 +603,11 @@ if [ -z $HC_CLUSTER_NS ]; then
 fi
 
 if [ -z $HC_PASS ]; then
+    echo "No value for HC_PASS parameter specified. Trying to get the bootstrap one from management cluster."
     get_hc_kubeadmin_pass
 
     if [ -z $HC_PASS ]; then
-        echo "No value for HC_PASS parameter specified"
+        echo "No value for HC_PASS parameter specified. Provide the value by using the -p parameter."
         exit 1
     fi
 fi
@@ -611,6 +632,11 @@ restore_svc
 echo "Restoration Done!"
 ELAPSED="Elapsed: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
 echo $ELAPSED
+
+## OCM Migration commands
+echo "Executing OCM migration commands"
+ocm_migration
+echo "OCM migration commands Done!"
 
 ## Teardown
 SECONDS=0
