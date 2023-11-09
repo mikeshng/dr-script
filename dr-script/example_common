@@ -2,7 +2,7 @@ BASE_PATH=${HOME}/Desktop/ocm-hosted-clusters
 AWS_CREDS="${HOME}/.aws/credentials"
 
 # For public clusters, just use "oc"
-OC="oc --backplane-as-cluster-admin"
+OC="oc --as backplane-cluster-admin"
 
 CONTROL_PLANE_AVAILABILITY_POLICY="HighlyAvailable"
 
