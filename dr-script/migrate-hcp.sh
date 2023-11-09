@@ -114,6 +114,10 @@ function backup_etcd() {
       https://${BUCKET_NAME}.s3.amazonaws.com/${HC_CLUSTER_NAME}-${POD}-snapshot.db
 
     echo "Checking to see if the backup uploaded successfully to s3..."
+    set +x
+    export AWS_ACCESS_KEY_ID="${ACCESS_KEY}"
+    export AWS_SECRET_ACCESS_KEY="${SECRET_KEY}"
+    set -x
     aws s3 ls s3://${BUCKET_NAME}/${HC_CLUSTER_NAME}-${POD}-snapshot.db
 }
 
