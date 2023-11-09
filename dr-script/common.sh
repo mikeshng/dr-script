@@ -1,6 +1,9 @@
 BASE_PATH=${HOME}/ocm-hosted-clusters
 AWS_CREDS="${HOME}/.aws/credentials"
 
+# For public clusters, just use "oc"
+OC="oc --backplane-as-cluster-admin"
+
 CONTROL_PLANE_AVAILABILITY_POLICY="HighlyAvailable"
 
 # SVC Context

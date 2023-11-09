@@ -11,7 +11,7 @@ function get_hc_kubeconfig() {
     # Don't exit if login failed, takes time for control plane to come up on restore
     set +e 
     for i in {1..200}; do
-        oc login $(rosa describe cluster -c ${HC_CLUSTER_ID} -o json | jq -r .api.url) -u kubeadmin -p ${HC_PASS}
+        ${OC} login $(rosa describe cluster -c ${HC_CLUSTER_ID} -o json | jq -r .api.url) -u kubeadmin -p ${HC_PASS}
         if [ $? -eq 0 ]; then
             break
         fi
@@ -24,7 +24,7 @@ function get_hc_kubeconfig() {
 function get_hc_kubeadmin_pass() {
   export KUBECONFIG="${MGMT_KUBECONFIG}"
 
-  HC_PASS=$(oc get secret -n  ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} kubeadmin-password -ojsonpath='{.data.password}' | base64 -d)
+  HC_PASS=$(${OC} get secret -n  ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} kubeadmin-password -ojsonpath='{.data.password}' | base64 -d)
 }
 
 function change_reconciliation() {
@@ -39,22 +39,22 @@ function change_reconciliation() {
             export KUBECONFIG=${MGMT_KUBECONFIG}
             # Pause reconciliation of HC and NP and ETCD writers
             PAUSED_UNTIL="true"
-            oc patch -n ${HC_CLUSTER_NS} hostedclusters/${HC_CLUSTER_NAME} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
+            ${OC} patch -n ${HC_CLUSTER_NS} hostedclusters/${HC_CLUSTER_NAME} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
             for nodepool in ${NODEPOOLS}
             do
-                oc patch -n ${HC_CLUSTER_NS} nodepools/${nodepool} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
+                ${OC} patch -n ${HC_CLUSTER_NS} nodepools/${nodepool} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
             done
-            oc scale deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 kube-apiserver openshift-apiserver openshift-oauth-apiserver control-plane-operator
+            ${OC} scale deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 kube-apiserver openshift-apiserver openshift-oauth-apiserver control-plane-operator
             ;;
         "start")
             # Restart reconciliation of HC and NP and ETCD writers
             PAUSED_UNTIL="false"
-            oc patch -n ${HC_CLUSTER_NS} hostedclusters/${HC_CLUSTER_NAME} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
+            ${OC} patch -n ${HC_CLUSTER_NS} hostedclusters/${HC_CLUSTER_NAME} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
             for nodepool in ${NODEPOOLS}
             do
-                oc patch -n ${HC_CLUSTER_NS} nodepools/${nodepool} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
+                ${OC} patch -n ${HC_CLUSTER_NS} nodepools/${nodepool} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
             done
-            oc scale deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=1 kube-apiserver openshift-apiserver openshift-oauth-apiserver control-plane-operator
+            ${OC} scale deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=1 kube-apiserver openshift-apiserver openshift-oauth-apiserver control-plane-operator
             ;;
         *)
             echo "Status not implemented"
@@ -70,13 +70,13 @@ function backup_etcd() {
     ETCD_CA_LOCATION=/etc/etcd/tls/etcd-ca/ca.crt
 
     # Create an etcd snapshot
-    oc exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl --cacert ${ETCD_CA_LOCATION} --cert /etc/etcd/tls/client/etcd-client.crt --key /etc/etcd/tls/client/etcd-client.key --endpoints=localhost:2379 snapshot save /var/lib/data/snapshot.db
+    ${OC} exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl --cacert ${ETCD_CA_LOCATION} --cert /etc/etcd/tls/client/etcd-client.crt --key /etc/etcd/tls/client/etcd-client.key --endpoints=localhost:2379 snapshot save /var/lib/data/snapshot.db
     if [ $? -ne 0 ]; then
         echo "Failed to save etcd snapshot."
         exit 1
     fi
 
-    oc exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl -w table snapshot status /var/lib/data/snapshot.db
+    ${OC} exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl -w table snapshot status /var/lib/data/snapshot.db
     if [ $? -ne 0 ]; then
         echo "Failed to table snapshot status."
         exit 1
@@ -92,7 +92,7 @@ function backup_etcd() {
     SECRET_KEY=$(grep aws_secret_access_key ${AWS_CREDS} | head -n1 | cut -d= -f2 | sed "s/ //g")
     SIGNATURE_HASH=$(echo -en ${SIGNATURE_STRING} | openssl sha1 -hmac "${SECRET_KEY}" -binary | base64)
 
-    oc exec -it etcd-0 -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- curl -X PUT -T "/var/lib/data/snapshot.db" \
+    ${OC} exec -it etcd-0 -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- curl -X PUT -T "/var/lib/data/snapshot.db" \
       -H "Host: ${BUCKET_NAME}.s3.amazonaws.com" \
       -H "Date: ${DATE_VALUE}" \
       -H "Content-Type: ${CONTENT_TYPE}" \
@@ -113,88 +113,88 @@ function render_hc_objects {
 
     # Certificates
     echo "Backing Up Certificate Objects:"
-    oc get certificate cluster-api-cert -n ${HC_CLUSTER_NS} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/certificate-cluster-api-cert.yaml
+    ${OC} get certificate cluster-api-cert -n ${HC_CLUSTER_NS} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/certificate-cluster-api-cert.yaml
     echo "--> Certificate"
     # sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/hc-${HC_CLUSTER_NAME}.yaml
 
     # HostedCluster
     echo "Backing Up HostedCluster Objects:"
-    oc get hc ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/hc-${HC_CLUSTER_NAME}.yaml
+    ${OC} get hc ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/hc-${HC_CLUSTER_NAME}.yaml
     echo "--> HostedCluster"
     sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/hc-${HC_CLUSTER_NAME}.yaml
 
     # NodePool
     for nodepool in ${NODEPOOLS}
     do
-        oc get np ${nodepool} -n ${HC_CLUSTER_NS} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/np-${nodepool}.yaml
+        ${OC} get np ${nodepool} -n ${HC_CLUSTER_NS} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/np-${nodepool}.yaml
         echo "--> NodePool ${nodepool}"
         sed -i'' -e '/^status:$/,$ d' ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/np-${nodepool}.yaml
     done
 
     # Secrets in the HC Namespace
     echo "--> HostedCluster Secrets"
-    for s in $(oc get secret -n ${HC_CLUSTER_NS}  | grep "^${HC_CLUSTER_NAME}" | awk '{print $1}'); do
-        oc get secret -n ${HC_CLUSTER_NS} $s -o yaml  > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/secret-${s}.yaml
+    for s in $(${OC} get secret -n ${HC_CLUSTER_NS}  | grep "^${HC_CLUSTER_NAME}" | awk '{print $1}'); do
+        ${OC} get secret -n ${HC_CLUSTER_NS} $s -o yaml  > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/secret-${s}.yaml
     done
 
     echo "--> HostedCluster Secrets"
-    for s in $(oc get secret -n ${HC_CLUSTER_NS}  | grep bound | awk '{print $1}'); do
-        oc get secret -n ${HC_CLUSTER_NS} $s -o yaml  > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/secret-${s}.yaml
+    for s in $(${OC} get secret -n ${HC_CLUSTER_NS}  | grep bound | awk '{print $1}'); do
+        ${OC} get secret -n ${HC_CLUSTER_NS} $s -o yaml  > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/secret-${s}.yaml
     done
-    for s in $(oc get secret -n ${HC_CLUSTER_NS}  | grep htpasswd-secret | awk '{print $1}'); do
-        oc get secret -n ${HC_CLUSTER_NS} $s -o yaml  > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/secret-${s}.yaml
+    for s in $(${OC} get secret -n ${HC_CLUSTER_NS}  | grep htpasswd-secret | awk '{print $1}'); do
+        ${OC} get secret -n ${HC_CLUSTER_NS} $s -o yaml  > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/secret-${s}.yaml
     done
 
     # Secrets in the HC Control Plane Namespace
     echo "--> HostedCluster ControlPlane Secrets"
-    for s in $(oc get secret -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}  | egrep -v "docker|service-account-token|oauth-openshift|NAME|token-${HC_CLUSTER_NAME}" | awk '{print $1}'); do
-        oc get secret  -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} $s -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/secret-${s}.yaml
+    for s in $(${OC} get secret -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}  | egrep -v "docker|service-account-token|oauth-openshift|NAME|token-${HC_CLUSTER_NAME}" | awk '{print $1}'); do
+        ${OC} get secret  -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} $s -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/secret-${s}.yaml
     done
 
     # Hosted Control Plane
     echo "--> HostedControlPlane"
-    oc get hcp ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/hcp-${HC_CLUSTER_NAME}.yaml
+    ${OC} get hcp ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/hcp-${HC_CLUSTER_NAME}.yaml
 
     # Cluster
     echo "--> Cluster"
-    CL_NAME=$(oc get hcp ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o jsonpath={.metadata.labels.\*})
-    oc get cluster ${CL_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/cl-${HC_CLUSTER_NAME}.yaml
+    CL_NAME=$(${OC} get hcp ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o jsonpath={.metadata.labels.\*})
+    ${OC} get cluster ${CL_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/cl-${HC_CLUSTER_NAME}.yaml
 
     # AWS Cluster
     echo "--> AWS Cluster"
-    oc get awscluster ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/awscl-${HC_CLUSTER_NAME}.yaml
+    ${OC} get awscluster ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/awscl-${HC_CLUSTER_NAME}.yaml
 
     # AWS MachineTemplate
     echo "--> AWS Machine Template"
-    MT_NAME=$(oc get awsmachinetemplate -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o json | jq -r '.items[0].metadata.name')
-    oc get awsmachinetemplate ${MT_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/awsmt-${HC_CLUSTER_NAME}.yaml
+    MT_NAME=$(${OC} get awsmachinetemplate -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o json | jq -r '.items[0].metadata.name')
+    ${OC} get awsmachinetemplate ${MT_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/awsmt-${HC_CLUSTER_NAME}.yaml
 
     # AWS Machines
     echo "--> AWS Machine"
-    CL_NAME=$(oc get hcp ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o jsonpath={.metadata.labels.\*})
-    for s in $(oc get awsmachines -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --no-headers | grep ${CL_NAME} | cut -f 1 -d\ ); do
-        oc get -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} awsmachines $s -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/awsm-${s}.yaml
+    CL_NAME=$(${OC} get hcp ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o jsonpath={.metadata.labels.\*})
+    for s in $(${OC} get awsmachines -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --no-headers | grep ${CL_NAME} | cut -f 1 -d\ ); do
+        ${OC} get -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} awsmachines $s -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/awsm-${s}.yaml
     done
 
     # MachineDeployments
     echo "--> HostedCluster MachineDeployments"
-    for s in $(oc get machinedeployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o name); do
+    for s in $(${OC} get machinedeployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o name); do
         mdp_name=$(echo ${s} | cut -f 2 -d /)
-        oc get -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} $s -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/machinedeployment-${mdp_name}.yaml
+        ${OC} get -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} $s -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/machinedeployment-${mdp_name}.yaml
     done
 
     # MachineSets
     echo "--> HostedCluster MachineSets"
-    for s in $(oc get machineset.cluster.x-k8s.io -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o name); do
+    for s in $(${OC} get machineset.cluster.x-k8s.io -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o name); do
         ms_name=$(echo ${s} | cut -f 2 -d /)
-        oc get -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} $s -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/machineset-${ms_name}.yaml
+        ${OC} get -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} $s -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/machineset-${ms_name}.yaml
     done
 
     # Machines
     echo "--> HostedCluster Machines"
-    for s in $(oc get machine.cluster.x-k8s.io -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o name); do
+    for s in $(${OC} get machine.cluster.x-k8s.io -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o name); do
         m_name=$(echo ${s} | cut -f 2 -d /)
-        oc get -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} $s -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/machine-${m_name}.yaml
+        ${OC} get -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} $s -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/machine-${m_name}.yaml
     done
 }
 
@@ -231,10 +231,10 @@ EOF
       sed -i'' -e '/pausedUntil:/d' ${HC_NEW_FILE}
     fi
 
-    HC=$(oc get hc -n ${HC_CLUSTER_NS} ${HC_CLUSTER_NAME} -o name || true)
+    HC=$(${OC} get hc -n ${HC_CLUSTER_NS} ${HC_CLUSTER_NAME} -o name || true)
     if [[ ${HC} == "" ]];then
         echo "Deploying HC Cluster: ${HC_CLUSTER_NAME} in ${HC_CLUSTER_NS} namespace"
-        oc apply -f ${HC_NEW_FILE}
+        ${OC} apply -f ${HC_NEW_FILE}
     else
         echo "HC Cluster ${HC_CLUSTER_NAME} already exists, avoiding step"
     fi
@@ -261,24 +261,24 @@ function restore_object() {
         "secret" | "machine" | "machineset" | "hcp" | "cl" | "awscl" | "awsmt" | "awsm" | "machinedeployment")
             # Cleaning the YAML files before apply them
             for f in $(ls -1 ${BACKUP_DIR}/namespaces/${2}/${1}-*); do
-                yq eval 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status)' $f | oc apply -f -
+                yq eval 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status)' $f | ${OC} apply -f -
             done
             ;;
         "certificate")
             for f in $(ls -1 ${BACKUP_DIR}/namespaces/${2}/${1}-*); do
-                yq eval 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status)' $f | oc apply -f -
+                yq eval 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status)' $f | ${OC} apply -f -
             done
             ;;
         "hc")
             # Cleaning the YAML files before apply them
             for f in $(ls -1 ${BACKUP_DIR}/namespaces/${2}/${1}-*); do
-                yq eval 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status,.spec.pausedUntil)' $f | oc apply -f -
+                yq eval 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status,.spec.pausedUntil)' $f | ${OC} apply -f -
             done
             ;;
         "np")
             # Cleaning the YAML files before apply them
             for f in $(ls -1 ${BACKUP_DIR}/namespaces/${2}/${1}-*); do
-                yq eval 'del(.metadata.annotations,.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status,.spec.pausedUntil)' $f | oc apply -f -
+                yq eval 'del(.metadata.annotations,.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status,.spec.pausedUntil)' $f | ${OC} apply -f -
             done
             ;;
         *)
@@ -296,7 +296,7 @@ function clean_routes() {
         exit 1
     fi
 
-    oc delete route -n ${1} --all
+    ${OC} delete route -n ${1} --all
 }
 
 function render_svc_objects() {
@@ -307,50 +307,50 @@ function render_svc_objects() {
 
     # ManagedCluster
     echo "Backing Up HostedCluster Objects:"
-    oc get managedcluster ${HC_CLUSTER_ID} -o yaml > ${BACKUP_DIR}/svc/managedcluster-${HC_CLUSTER_ID}.yaml
+    ${OC} get managedcluster ${HC_CLUSTER_ID} -o yaml > ${BACKUP_DIR}/svc/managedcluster-${HC_CLUSTER_ID}.yaml
     echo "--> ManagedCluster"
     sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/managedcluster-${HC_CLUSTER_ID}.yaml
     sed -i'' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/managedcluster-${HC_CLUSTER_ID}.yaml
 
     # ManagedClusterAddOns
-    oc get managedclusteraddons -n ${HC_CLUSTER_ID} config-policy-controller -o yaml > ${BACKUP_DIR}/svc/managedclusteraddon-config-policy-controller-${HC_CLUSTER_ID}.yaml
+    ${OC} get managedclusteraddons -n ${HC_CLUSTER_ID} config-policy-controller -o yaml > ${BACKUP_DIR}/svc/managedclusteraddon-config-policy-controller-${HC_CLUSTER_ID}.yaml
     echo "--> config-policy-controller ManagedClusterAddOn"
     sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/managedclusteraddon-config-policy-controller-${HC_CLUSTER_ID}.yaml
     sed -i'' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/managedclusteraddon-config-policy-controller-${HC_CLUSTER_ID}.yaml
 
-    oc get managedclusteraddons -n ${HC_CLUSTER_ID} governance-policy-framework -o yaml > ${BACKUP_DIR}/svc/managedclusteraddon-governance-policy-framework-${HC_CLUSTER_ID}.yaml
+    ${OC} get managedclusteraddons -n ${HC_CLUSTER_ID} governance-policy-framework -o yaml > ${BACKUP_DIR}/svc/managedclusteraddon-governance-policy-framework-${HC_CLUSTER_ID}.yaml
     echo "--> governance-policy-framework ManagedClusterAddOn"
     sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/managedclusteraddon-governance-policy-framework-${HC_CLUSTER_ID}.yaml
     sed -i'' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/managedclusteraddon-governance-policy-framework-${HC_CLUSTER_ID}.yaml
 
-    oc get managedclusteraddons -n ${HC_CLUSTER_ID} work-manager -o yaml > ${BACKUP_DIR}/svc/managedclusteraddon-work-manager-${HC_CLUSTER_ID}.yaml
+    ${OC} get managedclusteraddons -n ${HC_CLUSTER_ID} work-manager -o yaml > ${BACKUP_DIR}/svc/managedclusteraddon-work-manager-${HC_CLUSTER_ID}.yaml
     echo "--> work-manager ManagedClusterAddOn"
     sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/managedclusteraddon-work-manager-${HC_CLUSTER_ID}.yaml
     sed -i'' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/managedclusteraddon-work-manager-${HC_CLUSTER_ID}.yaml
 
     # ManifestWork
-    oc get manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID} -o yaml > ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}.yaml
+    ${OC} get manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID} -o yaml > ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}.yaml
     echo "--> ${HC_CLUSTER_ID} ManifestWork"
     sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}.yaml
     sed -i'' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}.yaml
-    oc patch manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID} --type=merge --patch '{"spec":{"deleteOption":{"propagationPolicy":"Orphan"}}}'
+    ${OC} patch manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID} --type=merge --patch '{"spec":{"deleteOption":{"propagationPolicy":"Orphan"}}}'
 
-    oc get manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-00-namespaces -o yaml > ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-00-namespaces.yaml
+    ${OC} get manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-00-namespaces -o yaml > ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-00-namespaces.yaml
     echo "--> ${HC_CLUSTER_ID}-00-namespaces ManifestWork"
     sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-00-namespaces.yaml
     sed -i'' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-00-namespaces.yaml
-    oc patch manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-00-namespaces --type=merge --patch '{"spec":{"deleteOption":{"propagationPolicy":"Orphan"}}}'
+    ${OC} patch manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-00-namespaces --type=merge --patch '{"spec":{"deleteOption":{"propagationPolicy":"Orphan"}}}'
 
-    oc get manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-workers -o yaml > ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-workers.yaml
+    ${OC} get manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-workers -o yaml > ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-workers.yaml
     echo "--> ${HC_CLUSTER_ID}-workers ManifestWork"
     sed -i'' -e '/^status:$/,$d' ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-workers.yaml
     sed -i'' -e "s/${MGMT_CLUSTER_NAME}/${MGMT2_CLUSTER_NAME}/g" ${BACKUP_DIR}/svc/manifestwork-${HC_CLUSTER_ID}-workers.yaml
-    oc patch manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-workers --type=merge --patch '{"spec":{"deleteOption":{"propagationPolicy":"Orphan"}}}'
+    ${OC} patch manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-workers --type=merge --patch '{"spec":{"deleteOption":{"propagationPolicy":"Orphan"}}}'
 
     # This will be recreated upon updating the managedcluster so we don't back it up
-    oc patch manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-hosted-klusterlet --type=merge --patch '{"spec":{"deleteOption":{"propagationPolicy":"Orphan"}}}'
+    ${OC} patch manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID}-hosted-klusterlet --type=merge --patch '{"spec":{"deleteOption":{"propagationPolicy":"Orphan"}}}'
 
-    oc delete manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID} ${HC_CLUSTER_ID}-00-namespaces ${HC_CLUSTER_ID}-workers
+    ${OC} delete manifestwork -n ${MGMT_CLUSTER_NAME} ${HC_CLUSTER_ID} ${HC_CLUSTER_ID}-00-namespaces ${HC_CLUSTER_ID}-workers
 }
 
 function backup_hc() {
@@ -366,12 +366,12 @@ function backup_hc() {
 
     # Create a ConfigMap on the guest so we can tell which management cluster it came from
     export KUBECONFIG=${HC_KUBECONFIG}
-    oc create configmap ${USER}-dev-cluster -n default --from-literal=from=${MGMT_CLUSTER_NAME} || true
+    ${OC} create configmap ${USER}-dev-cluster -n default --from-literal=from=${MGMT_CLUSTER_NAME} || true
 
     # Change kubeconfig to management cluster
     export KUBECONFIG="${MGMT_KUBECONFIG}"
-    #oc annotate -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} machines --all "machine.cluster.x-k8s.io/exclude-node-draining="
-    NODEPOOLS=$(oc get nodepools -n ${HC_CLUSTER_NS} -o=jsonpath='{.items[?(@.spec.clusterName=="'${HC_CLUSTER_NAME}'")].metadata.name}')
+    #${OC} annotate -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} machines --all "machine.cluster.x-k8s.io/exclude-node-draining="
+    NODEPOOLS=$(${OC} get nodepools -n ${HC_CLUSTER_NS} -o=jsonpath='{.items[?(@.spec.clusterName=="'${HC_CLUSTER_NAME}'")].metadata.name}')
 
     change_reconciliation "stop"
     backup_etcd
@@ -391,11 +391,11 @@ function restore_hc() {
 
     export KUBECONFIG=${MGMT2_KUBECONFIG}
     BACKUP_DIR=${HC_CLUSTER_DIR}/backup
-    #oc delete ns ${HC_CLUSTER_NS} || true
-    oc new-project ${HC_CLUSTER_NS} || oc project ${HC_CLUSTER_NS}
+    #${OC} delete ns ${HC_CLUSTER_NS} || true
+    ${OC} new-project ${HC_CLUSTER_NS} || ${OC} project ${HC_CLUSTER_NS}
     restore_object "secret" ${HC_CLUSTER_NS}
     restore_object "certificate" ${HC_CLUSTER_NS}
-    oc new-project ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} || oc project ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}
+    ${OC} new-project ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} || ${OC} project ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}
     restore_object "secret" ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}
     restore_object "hcp" ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}
     restore_object "cl" ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}
@@ -416,10 +416,10 @@ function restore_svc() {
       # Delete managed cluster addons first, instead of updating it
       if [[ "$f" == managedclusteraddon-*.yaml ]]; then
         ADDON_NAME=$(cat $f | yq .metadata.name)
-        oc delete managedclusteraddon -n ${HC_CLUSTER_ID} ${ADDON_NAME}
+        ${OC} delete managedclusteraddon -n ${HC_CLUSTER_ID} ${ADDON_NAME}
       fi
 
-      yq eval 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status)' $f | oc apply -f -
+      yq eval 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status)' $f | ${OC} apply -f -
     done
 }
 
@@ -447,62 +447,62 @@ function teardown_old_hc() {
     export KUBECONFIG=${MGMT_KUBECONFIG}
 
     # Scale down deployments
-    oc scale deployment -n hypershift operator --replicas 0
-    oc scale deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 --all
-    oc scale statefulset.apps -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 --all
+    ${OC} scale deployment -n hypershift operator --replicas 0
+    ${OC} scale deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 --all
+    ${OC} scale statefulset.apps -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 --all
     sleep 15
 
 
     # Delete Nodepools
-    NODEPOOLS=$(oc get nodepools -n ${HC_CLUSTER_NS} -o=jsonpath='{.items[?(@.spec.clusterName=="'${HC_CLUSTER_NAME}'")].metadata.name}')
+    NODEPOOLS=$(${OC} get nodepools -n ${HC_CLUSTER_NS} -o=jsonpath='{.items[?(@.spec.clusterName=="'${HC_CLUSTER_NAME}'")].metadata.name}')
     if [[ ! -z "${NODEPOOLS}" ]];then
         for nodepool in ${NODEPOOLS}
         do
-            oc patch -n "${HC_CLUSTER_NS}" nodepool ${nodepool} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]'
-            oc delete np -n ${HC_CLUSTER_NS} ${nodepool}
+            ${OC} patch -n "${HC_CLUSTER_NS}" nodepool ${nodepool} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]'
+            ${OC} delete np -n ${HC_CLUSTER_NS} ${nodepool}
         done
     fi
 
     # Machines
-    for m in $(oc get machines.cluster.x-k8s.io -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o name); do
-        oc patch -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} ${m} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]' || true
-        oc delete -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} ${m} || true
+    for m in $(${OC} get machines.cluster.x-k8s.io -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o name); do
+        ${OC} patch -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} ${m} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]' || true
+        ${OC} delete -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} ${m} || true
     done
 
-    oc delete machineset.cluster.x-k8s.io -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --all || true
+    ${OC} delete machineset.cluster.x-k8s.io -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --all || true
 
     # Cluster
-    C_NAME=$(oc get cluster -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o name)
-    oc patch -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} ${C_NAME} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]'
-    oc delete cluster.cluster.x-k8s.io -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --all
+    C_NAME=$(${OC} get cluster -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o name)
+    ${OC} patch -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} ${C_NAME} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]'
+    ${OC} delete cluster.cluster.x-k8s.io -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --all
 
     # AWS Machines
-    for m in $(oc get awsmachine.infrastructure.cluster.x-k8s.io -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o name)
+    for m in $(${OC} get awsmachine.infrastructure.cluster.x-k8s.io -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o name)
     do
-        oc patch -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} ${m} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]' || true
-        oc delete -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} ${m} || true
+        ${OC} patch -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} ${m} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]' || true
+        ${OC} delete -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} ${m} || true
     done
 
     # Service
-     oc patch -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} service private-router --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]' || true
+     ${OC} patch -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} service private-router --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]' || true
 
     # Awsendpointservice
-    oc patch -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} awsendpointservice private-router --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]' || true
+    ${OC} patch -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} awsendpointservice private-router --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]' || true
 
     # HCP
-    oc patch -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} hostedcontrolplane.hypershift.openshift.io ${HC_CLUSTER_NAME} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]'
-    oc delete hostedcontrolplane.hypershift.openshift.io -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --all
+    ${OC} patch -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} hostedcontrolplane.hypershift.openshift.io ${HC_CLUSTER_NAME} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]'
+    ${OC} delete hostedcontrolplane.hypershift.openshift.io -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --all
 
-    oc delete ns ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} || true
+    ${OC} delete ns ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} || true
 
-    oc -n ${HC_CLUSTER_NS} patch hostedclusters ${HC_CLUSTER_NAME} -p '{"metadata":{"finalizers":null}}' --type merge || true
-    oc delete hc -n ${HC_CLUSTER_NS} ${HC_CLUSTER_NAME}  --wait=false || true
-    oc -n ${HC_CLUSTER_NS} patch hostedclusters ${HC_CLUSTER_NAME} -p '{"metadata":{"finalizers":null}}' --type merge || true
-    oc delete hc -n ${HC_CLUSTER_NS} ${HC_CLUSTER_NAME}  || true
+    ${OC} -n ${HC_CLUSTER_NS} patch hostedclusters ${HC_CLUSTER_NAME} -p '{"metadata":{"finalizers":null}}' --type merge || true
+    ${OC} delete hc -n ${HC_CLUSTER_NS} ${HC_CLUSTER_NAME}  --wait=false || true
+    ${OC} -n ${HC_CLUSTER_NS} patch hostedclusters ${HC_CLUSTER_NAME} -p '{"metadata":{"finalizers":null}}' --type merge || true
+    ${OC} delete hc -n ${HC_CLUSTER_NS} ${HC_CLUSTER_NAME}  || true
 
-    oc scale deployment -n hypershift operator --replicas 2
+    ${OC} scale deployment -n hypershift operator --replicas 2
 
-    oc delete ns ${HC_CLUSTER_NS} || true
+    ${OC} delete ns ${HC_CLUSTER_NS} || true
 }
 
 function teardown_old_klusterlet() {
@@ -510,31 +510,31 @@ function teardown_old_klusterlet() {
     export KUBECONFIG=${MGMT_KUBECONFIG}
 
     # Klusterlet + NS
-    oc delete klusterlet klusterlet-${HC_CLUSTER_ID} --wait=false
-    oc patch klusterlet klusterlet-${HC_CLUSTER_ID} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]' || true
-    oc delete klusterlet klusterlet-${HC_CLUSTER_ID} --ignore-not-found=true
+    ${OC} delete klusterlet klusterlet-${HC_CLUSTER_ID} --wait=false
+    ${OC} patch klusterlet klusterlet-${HC_CLUSTER_ID} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]' || true
+    ${OC} delete klusterlet klusterlet-${HC_CLUSTER_ID} --ignore-not-found=true
 
-    oc delete ns klusterlet-${HC_CLUSTER_ID} --wait=false
-    for p in $(oc get configurationpolicy -n klusterlet-${HC_CLUSTER_ID} -o name)
+    ${OC} delete ns klusterlet-${HC_CLUSTER_ID} --wait=false
+    for p in $(${OC} get configurationpolicy -n klusterlet-${HC_CLUSTER_ID} -o name)
     do
-        oc patch -n klusterlet-${HC_CLUSTER_ID} ${p} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]' || true
+        ${OC} patch -n klusterlet-${HC_CLUSTER_ID} ${p} --type=json --patch='[ { "op":"remove", "path": "/metadata/finalizers" }]' || true
     done
-    oc delete ns klusterlet-${HC_CLUSTER_ID} --ignore-not-found=true
+    ${OC} delete ns klusterlet-${HC_CLUSTER_ID} --ignore-not-found=true
 }
 
 function restore_ovn_pods() {
     echo "Deleting OVN Pods in Guest Cluster to reconnect with new OVN Master"
 
-    oc --kubeconfig=${HC_KUBECONFIG} delete pod -n openshift-ovn-kubernetes --all --wait=false --grace-period=0
+    ${OC} --kubeconfig=${HC_KUBECONFIG} delete pod -n openshift-ovn-kubernetes --all --wait=false --grace-period=0
 }
 
 function restart_kube_apiserver() {
     echo "Restart audit-webook, kube-apiserver, and openshift-route-controller-manager to fix intermittent api issues"
     export KUBECONFIG=${MGMT2_KUBECONFIG}
-    oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 deployment/audit-webhook
-    oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=2 deployment/audit-webhook
+    ${OC} scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 deployment/audit-webhook
+    ${OC} scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=2 deployment/audit-webhook
     for i in {1..36}; do
-        STATUS=$(oc get deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} audit-webhook -o jsonpath='{.status.conditions[?(@.type=="Available")].status}')
+        STATUS=$(${OC} get deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} audit-webhook -o jsonpath='{.status.conditions[?(@.type=="Available")].status}')
         if [ "$STATUS" == "True" ]; then
             break
         fi
@@ -546,10 +546,10 @@ function restart_kube_apiserver() {
         fi
     done
 
-    oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 deployment/kube-apiserver
-    oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=3 deployment/kube-apiserver
+    ${OC} scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 deployment/kube-apiserver
+    ${OC} scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=3 deployment/kube-apiserver
     for i in {1..36}; do
-        STATUS=$(oc get deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} kube-apiserver -o jsonpath='{.status.conditions[?(@.type=="Available")].status}')
+        STATUS=$(${OC} get deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} kube-apiserver -o jsonpath='{.status.conditions[?(@.type=="Available")].status}')
         if [ "$STATUS" == "True" ]; then
             break
         fi
@@ -561,21 +561,21 @@ function restart_kube_apiserver() {
         fi
     done
 
-    oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 deployment/openshift-route-controller-manager
-    oc scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=3 deployment/openshift-route-controller-manager
+    ${OC} scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 deployment/openshift-route-controller-manager
+    ${OC} scale -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=3 deployment/openshift-route-controller-manager
 }
 
 function readd_appliedmanifestwork_ownerref() {
     export KUBECONFIG=${MGMT2_KUBECONFIG}
-    export AMW=$(oc get appliedmanifestwork --no-headers -o custom-columns=name:.metadata.name | grep ${HC_CLUSTER_ID}$)
-    export AMW_UID=$(oc get appliedmanifestwork $AMW -o go-template='{{ .metadata.uid }}')
-    export AMW_NAME=$(oc get appliedmanifestwork $AMW -o go-template='{{ .metadata.name }}')
-    oc -n ${HC_CLUSTER_NS} patch hostedcluster ${HC_CLUSTER_NAME} --patch "{\"metadata\":{\"ownerReferences\":[{\"apiVersion\":\"work.open-cluster-management.io/v1\",\"kind\":\"AppliedManifestWork\",\"name\":\"$AMW_NAME\",\"uid\":\"$AMW_UID\"}]}}" --type=merge
+    export AMW=$(${OC} get appliedmanifestwork --no-headers -o custom-columns=name:.metadata.name | grep ${HC_CLUSTER_ID}$)
+    export AMW_UID=$(${OC} get appliedmanifestwork $AMW -o go-template='{{ .metadata.uid }}')
+    export AMW_NAME=$(${OC} get appliedmanifestwork $AMW -o go-template='{{ .metadata.name }}')
+    ${OC} -n ${HC_CLUSTER_NS} patch hostedcluster ${HC_CLUSTER_NAME} --patch "{\"metadata\":{\"ownerReferences\":[{\"apiVersion\":\"work.open-cluster-management.io/v1\",\"kind\":\"AppliedManifestWork\",\"name\":\"$AMW_NAME\",\"uid\":\"$AMW_UID\"}]}}" --type=merge
 }
 
 function teardown_old_svc() {
     export KUBECONFIG=${SVC_KUBECONFIG}
-    oc delete manifestwork -n ${MGMT_CLUSTER_NAME} addon-config-policy-controller-deploy-hosting-${HC_CLUSTER_ID}-0 addon-governance-policy-framework-deploy-hosting-${HC_CLUSTER_ID}-0 addon-work-manager-deploy-hosting-${HC_CLUSTER_ID}-0 ${HC_CLUSTER_ID}-hosted-klusterlet
+    ${OC} delete manifestwork -n ${MGMT_CLUSTER_NAME} addon-config-policy-controller-deploy-hosting-${HC_CLUSTER_ID}-0 addon-governance-policy-framework-deploy-hosting-${HC_CLUSTER_ID}-0 addon-work-manager-deploy-hosting-${HC_CLUSTER_ID}-0 ${HC_CLUSTER_ID}-hosted-klusterlet
 }
 
 helpFunc()
