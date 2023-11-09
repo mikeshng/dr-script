@@ -17,7 +17,8 @@ function get_hc_kubeconfig() {
 
     # Don't exit if login failed, takes time for control plane to come up on restore
     set +e 
-    for i in {1..200}; do
+    attempts=$1
+    for i in $(seq 1 $attempts); do
         ${OC} login $(rosa describe cluster -c ${HC_CLUSTER_ID} -o json | jq -r .api.url) -u kubeadmin -p ${HC_PASS}
         if [ $? -eq 0 ]; then
             break
@@ -32,6 +33,21 @@ function get_hc_kubeadmin_pass() {
   export KUBECONFIG="${MGMT_KUBECONFIG}"
 
   HC_PASS=$(${OC} get secret -n  ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} kubeadmin-password -ojsonpath='{.data.password}' | base64 -d)
+}
+
+function create_cm_in_hc() {
+    get_hc_kubeconfig 1
+
+    # Create a ConfigMap on the guest so we can tell which management cluster it came from
+    export KUBECONFIG=${HC_KUBECONFIG}
+
+    # HC may be in failed state. Do not fail backup if access to HC fails
+    set +e 
+    ${OC} create configmap ${USER}-dev-cluster -n default --from-literal=from=${MGMT_CLUSTER_NAME} || true
+    if [ $? -ne 0 ]; then
+        echo "Failed to create ConfigMap on Hosted Cluster."
+    fi
+    set -e
 }
 
 function change_reconciliation() {
@@ -359,11 +375,7 @@ function backup_hc() {
     fi
 
     mkdir -p ${BACKUP_DIR}
-    get_hc_kubeconfig
-
-    # Create a ConfigMap on the guest so we can tell which management cluster it came from
-    export KUBECONFIG=${HC_KUBECONFIG}
-    ${OC} create configmap ${USER}-dev-cluster -n default --from-literal=from=${MGMT_CLUSTER_NAME} || true
+    create_cm_in_hc
 
     # Change kubeconfig to management cluster
     export KUBECONFIG="${MGMT_KUBECONFIG}"
@@ -631,7 +643,7 @@ HC_KUBECONFIG="${HC_CLUSTER_DIR}/kubeconfig"
 BACKUP_DIR=${HC_CLUSTER_DIR}/backup
 
 ## Backup
-echo "Creating ETCD Backup"
+echo "Creating Backup of the HC"
 SECONDS=0
 backup_hc
 echo "Backup Done!"
@@ -654,7 +666,7 @@ teardown_old_svc
 teardown_old_hc
 teardown_old_klusterlet
 # old HC kubeconfig before migration is no longer valid after migration
-get_hc_kubeconfig
+get_hc_kubeconfig 200
 restore_ovn_pods
 restart_kube_apiserver
 readd_appliedmanifestwork_ownerref

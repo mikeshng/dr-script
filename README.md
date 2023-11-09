@@ -6,7 +6,7 @@
 The required `HCPMigration` role to run the migration `ocm` commands.
 
 ## Usage
-- Update ccommon.sh with svc, svc2, mgmt, mgmt2, and hc details. If there is only one svc cluster involved fill out the information the same for svc and svc2. 
+- Update common.sh with svc, svc2, mgmt, mgmt2, and hc details. If there is only one svc cluster involved fill out the information the same for svc and svc2. 
 - Run the migration `pushd dr-script && ./migrate-hcp.sh <cluster-id> <cluster-name> && popd`. For example, `pushd dr-script && ./migrate-hcp.sh 27cndaeif07ns4p6os6gvvbgbhkenu2e some-rosa-hcp && popd`
 
 ## TODO:
