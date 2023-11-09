@@ -2,6 +2,13 @@
 
 set -eux
 
+commands=("aws" "oc" "ocm" "rosa" "yq")
+for cmd in "${commands[@]}"
+do
+    echo "Checking to see if $cmd command is available..."
+    command -v $cmd
+done
+
 function get_hc_kubeconfig() {
     if [ ! -f ${HC_KUBECONFIG} ]; then
         touch ${HC_KUBECONFIG}
@@ -71,23 +78,14 @@ function backup_etcd() {
 
     # Create an etcd snapshot
     ${OC} exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl --cacert ${ETCD_CA_LOCATION} --cert /etc/etcd/tls/client/etcd-client.crt --key /etc/etcd/tls/client/etcd-client.key --endpoints=localhost:2379 snapshot save /var/lib/data/snapshot.db
-    if [ $? -ne 0 ]; then
-        echo "Failed to save etcd snapshot."
-        exit 1
-    fi
 
     ${OC} exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl -w table snapshot status /var/lib/data/snapshot.db
-    if [ $? -ne 0 ]; then
-        echo "Failed to table snapshot status."
-        exit 1
-    fi
 
     FILEPATH="/${BUCKET_NAME}/${HC_CLUSTER_NAME}-${POD}-snapshot.db"
     CONTENT_TYPE="application/x-compressed-tar"
     DATE_VALUE=`date -R`
     SIGNATURE_STRING="PUT\n\n${CONTENT_TYPE}\n${DATE_VALUE}\n${FILEPATH}"
 
-    #set +x
     ACCESS_KEY=$(grep aws_access_key_id ${AWS_CREDS} | head -n1 | cut -d= -f2 | sed "s/ //g")
     SECRET_KEY=$(grep aws_secret_access_key ${AWS_CREDS} | head -n1 | cut -d= -f2 | sed "s/ //g")
     SIGNATURE_HASH=$(echo -en ${SIGNATURE_STRING} | openssl sha1 -hmac "${SECRET_KEY}" -binary | base64)
@@ -98,10 +96,9 @@ function backup_etcd() {
       -H "Content-Type: ${CONTENT_TYPE}" \
       -H "Authorization: AWS ${ACCESS_KEY}:${SIGNATURE_HASH}" \
       https://${BUCKET_NAME}.s3.amazonaws.com/${HC_CLUSTER_NAME}-${POD}-snapshot.db
-    if [ $? -ne 0 ]; then
-        echo "Failed to upload etcd snapshot."
-        exit 1
-    fi
+
+    echo "Checking to see if the backup uploaded successfully to s3..."
+    aws s3 ls s3://${BUCKET_NAME}/${HC_CLUSTER_NAME}-${POD}-snapshot.db
 }
 
 function render_hc_objects {
@@ -426,20 +423,12 @@ function restore_svc() {
 function ocm_migration() {
     echo "The existing management cluster on OCM is:"
     ocm get /api/clusters_mgmt/v1/clusters/${HC_CLUSTER_ID}/hypershift
-    if [ $? -ne 0 ]; then
-        echo "Failed to get details about the hosted cluster from OCM."
-        exit 1
-    fi
-
+    echo "Updating the management cluster on OCM..."
     ocm patch /api/clusters_mgmt/v1/clusters/${HC_CLUSTER_ID}/hypershift <<-EOF
 {
 "management_cluster":"${MGMT2_CLUSTER_NAME}"
 }
 EOF
-    if [ $? -ne 0 ]; then
-        echo "Failed to patch OCM with new management cluster. Ensure you have the HCPMigration role."
-        exit 1
-    fi
 }
 
 function teardown_old_hc() {
