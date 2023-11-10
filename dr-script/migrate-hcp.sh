@@ -586,7 +586,7 @@ function teardown_old_svc() {
 helpFunc()
 {
    echo ""
-   echo "Usage: $0 HC_CLUSTER_ID HC_CLUSTER_NAME -e HC_ENV -p HC_PASS"
+   echo "Usage: $0 HC_CLUSTER_ID HC_CLUSTER_NAME -e HC_ENV -p HC_PASS -b <any_value_skips_backup> -r <any_value_skips_restore>"
    exit 1 
 }
 
@@ -614,11 +614,15 @@ fi
 shift
 
 HC_PASS=""
-while getopts "e:p:" opt
+SKIP_BACKUP=false
+SKIP_RESTORE=false
+while getopts "b:e:p:r:" opt
 do
    case "$opt" in
+      b ) SKIP_BACKUP=true ;;
       e ) HC_ENV="${OPTARG}" ;;
       p ) HC_PASS="${OPTARG}" ;;
+      r ) SKIP_RESTORE=true ;;
       ? ) helpFunc ;; 
    esac
 done
@@ -647,38 +651,46 @@ HC_KUBECONFIG="${HC_CLUSTER_DIR}/kubeconfig"
 BACKUP_DIR=${HC_CLUSTER_DIR}/backup
 
 ## Backup
-echo "Creating Backup of the HC"
-SECONDS=0
-backup_hc
-echo "Backup Done!"
-ELAPSED="Elapsed: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
-echo $ELAPSED
+if $SKIP_BACKUP; then
+    echo "Skipping Backup of the HC"
+else
+    echo "Creating Backup of the HC"
+    SECONDS=0
+    backup_hc
+    echo "Backup Done!"
+    ELAPSED="Elapsed: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
+    echo $ELAPSED
+fi
 
 ## Migration
-SECONDS=0
-echo "Executing the HC Migration"
-restore_hc
-restore_svc
-echo "Restoration Done!"
-ELAPSED="Elapsed: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
-echo $ELAPSED
+if $SKIP_RESTORE; then
+    echo "Skipping Restore of the HC"
+else
+    SECONDS=0
+    echo "Executing the HC Migration"
+    restore_hc
+    restore_svc
+    echo "Restoration Done!"
+    ELAPSED="Elapsed: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
+    echo $ELAPSED
 
-## Teardown
-SECONDS=0
-echo "Tearing down the HC in Source Management Cluster"
-teardown_old_svc
-teardown_old_hc
-teardown_old_klusterlet
-# old HC kubeconfig before migration is no longer valid after migration
-get_hc_kubeconfig 200
-restore_ovn_pods
-restart_kube_apiserver
-readd_appliedmanifestwork_ownerref
-echo "Teardown Done"
-ELAPSED="Elapsed: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
-echo $ELAPSED
+    ## Teardown
+    SECONDS=0
+    echo "Tearing down the HC in Source Management Cluster"
+    teardown_old_svc
+    teardown_old_hc
+    teardown_old_klusterlet
+    # old HC kubeconfig before migration is no longer valid after migration
+    get_hc_kubeconfig 200
+    restore_ovn_pods
+    restart_kube_apiserver
+    readd_appliedmanifestwork_ownerref
+    echo "Teardown Done"
+    ELAPSED="Elapsed: $(($SECONDS / 3600))hrs $((($SECONDS / 60) % 60))min $(($SECONDS % 60))sec"
+    echo $ELAPSED
 
-## OCM Migration commands
-echo "Executing OCM migration commands"
-ocm_migration
-echo "OCM migration commands Done!"
+    ## OCM Migration commands
+    echo "Executing OCM migration commands"
+    ocm_migration
+    echo "OCM migration commands Done!"
+fi
